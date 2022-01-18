@@ -3,5 +3,5 @@
 from follow_line import Robot
 
 robot = Robot()
-robot.main(20, 2, 0.001, 2)
+robot.main(20, 1.6, 0.04, 1.2)
 

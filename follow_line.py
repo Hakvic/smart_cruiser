@@ -2,6 +2,7 @@
 
 import time
 import logging
+
 from ev3dev2.motor import MoveTank, OUTPUT_B, OUTPUT_C, speed_to_speedvalue, SpeedNativeUnits
 from ev3dev2.sensor.lego import ColorSensor, UltrasonicSensor
 from ev3dev2.sound import Sound
@@ -29,26 +30,29 @@ class Robot:
         self.sensor_right.mode = "COL-REFLECT"
         self.target = 0
         self.run = True
+        self.cross_count = 0
+        self.integral = 0
+        self.error = 0
+        self.derivative = 0
+        self.last_error = 0
+        self.direction = ["left", "forward"]
 
     def pid(self, speed, kp, ki, kd):
-        integral = 0.0
-        last_error = 0.0
-        derivative = 0.0
-        dt = 500
         speed = speed_to_speedvalue(speed)
         speed_native_units = speed.to_native_units(self.tank_drive.left_motor)
 
-        error = self.target - self.sensor_middle.value()
-        integral += (error * dt)
-        derivative = (error - last_error) / dt
+        self.error = self.target - self.sensor_middle.value()
+        self.integral += self.error
+        self.derivative = self.error - self.last_error
 
-        u = (kp * error) + (ki * integral) + (kd * derivative)
+        u = (kp * self.error) + (ki * self.integral) + (kd * self.derivative)
         left_speed = SpeedNativeUnits(speed_native_units - u)
         right_speed = SpeedNativeUnits(speed_native_units + u)
-        logger.debug("u: {}".format(u))
-        logger.debug("left speed: {}".format(left_speed))
-        logger.debug("right speed: {}".format(right_speed))
-        
+        # logger.debug("u: {}".format(u))
+        # logger.debug("left speed: {}".format(left_speed))
+        # logger.debug("right speed: {}".format(right_speed))
+        self.last_error = self.error
+
         return left_speed, right_speed
 
     def turn(self):
@@ -56,29 +60,32 @@ class Robot:
         # logger.debug("before sensor 1: {}".format(self.sensor_middle.value()))
         # logger.debug("before sensor 2: {}".format(self.sensor_left.value()))
         # logger.debug("before sensor 3: {}".format(self.sensor_left.value()))
-        if self.sensor_left.value() < self.target:
-            logger.debug("left stop")
+        # logger.debug("Turn")
+        if self.sensor_left.value() < 20:
+            # logger.debug("left stop")
             self.tank_drive.stop()
-            self.tank_drive.on(0, 10)
-            while self.sensor_middle.value() > 20 or self.sensor_left.value() < self.target:
-                logger.debug("while LEFT")
-                logger.debug("sensor middle: {}".format(self.sensor_middle.value()))
-                logger.debug("sensor left: {}".format(self.sensor_left.value()))
+            if self.sensor_left.value() < 20 and not self.sensor_right.value() < 20:
                 self.tank_drive.on(0, 10)
-            logger.debug("sensor middle after while: {}".format(self.sensor_middle.value()))
-            logger.debug("sensor left after while: {}".format(self.sensor_left.value()))
+                while self.sensor_middle.value() > 20 or self.sensor_left.value() < 20:
+                    # logger.debug("while LEFT")
+                    # logger.debug("sensor middle: {}".format(self.sensor_middle.value()))
+                    # logger.debug("sensor left: {}".format(self.sensor_left.value()))
+                    self.tank_drive.on(0, 10)
+            # logger.debug("sensor middle after while: {}".format(self.sensor_middle.value()))
+            # logger.debug("sensor left after while: {}".format(self.sensor_left.value()))
 
-        if self.sensor_right.value() < self.target:
-            logger.debug("right stop")
+        if self.sensor_right.value() < 20:
+            # logger.debug("right stop")
             self.tank_drive.stop()
-            self.tank_drive.on(10, 0)
-            while self.sensor_middle.value() > 20 or self.sensor_right.value() < self.target:
-                logger.debug("while RIGHT")
-                logger.debug("sensor middle: {}".format(self.sensor_middle.value()))
-                logger.debug("sensor right: {}".format(self.sensor_right.value()))
+            if self.sensor_right.value() < 20 and not self.sensor_left.value() < 20:
                 self.tank_drive.on(10, 0)
-            logger.debug("sensor middle after while: {}".format(self.sensor_middle.value()))
-            logger.debug("sensor right after while: {}".format(self.sensor_right.value()))
+                while self.sensor_middle.value() > 20 or self.sensor_right.value() < 20:
+                    # logger.debug("while RIGHT")
+                    # logger.debug("sensor middle: {}".format(self.sensor_middle.value()))
+                    # logger.debug("sensor right: {}".format(self.sensor_right.value()))
+                    self.tank_drive.on(10, 0)
+            # logger.debug("sensor middle after while: {}".format(self.sensor_middle.value()))
+            # logger.debug("sensor right after while: {}".format(self.sensor_right.value()))
 
     def cruiser(self, left_speed, right_speed):
 
@@ -98,8 +105,39 @@ class Robot:
 
         return left_speed, right_speed
 
+    def crossing(self):
+
+        if self.sensor_left.value() < 20 or self.sensor_right.value() < 20:
+            logger.debug("stop croisement")
+            self.tank_drive.stop()
+            if self.sensor_left.value() < 20 and self.sensor_right.value() < 20 and self.sensor_middle.value() < 20:
+                logger.debug("cross_direction: {}".format(self.direction[0]))
+                logger.debug("liste avant: {}".format(self.direction))
+                if self.direction[0] == "left":
+                    self.direction.pop(0)
+                    Sound().play_song((('D4', 'e3'), ('D4', 'e3')))  # turn left
+                    self.tank_drive.on(0, 10)
+                    while self.sensor_middle.value() > 20 or self.sensor_left.value() < 20:
+                        self.tank_drive.on(0, 10)
+
+                elif self.direction[0] == "forward":  # go forward
+                    self.direction.pop(0)
+                    self.tank_drive.on(10, 10)
+                    Sound().play_song((('D4', 'e3'), ('D4', 'e3')))
+                    while self.sensor_left.value() < 20 and self.sensor_right.value() < 20:
+                        self.tank_drive.on(10, 10)
+
+                elif self.direction[0] == "right":  # turn right
+                    self.direction.pop(0)
+                    self.tank_drive.on(10, 10)
+                    Sound().play_song((('D4', 'e3'), ('D4', 'e3')))
+                    while self.sensor_middle.value() > 20 or self.sensor_right.value() < 20:
+                        self.tank_drive.on(10, 0)
+
+        logger.debug("liste apres:  {}".format(self.direction))
+
     def stop(self):
-        if self.sensor_left.value() < 10 and self.sensor_right.value() < 10:
+        if self.sensor_left.value() < 10 and self.sensor_right.value() < 10 and self.sensor_middle.value() > 70:
             logger.debug("STOP")
             self.tank_drive.stop()
             self.run = False
@@ -112,6 +150,7 @@ class Robot:
             left_speed, right_speed = self.pid(speed, kp, ki, kd)
             # left_speed, right_speed = self.cruiser(left_speed, right_speed)
             self.turn()
+            self.crossing()
             self.tank_drive.on(left_speed, right_speed)
             self.stop()
             # time.sleep(0.5)
