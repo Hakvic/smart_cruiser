@@ -2,6 +2,12 @@
 
 import time
 import logging
+import random
+
+from smbus import SMBus
+from time import sleep
+from ev3dev2.port import LegoPort
+from ev3dev2.sensor import INPUT_4
 
 from ev3dev2.motor import MoveTank, OUTPUT_B, OUTPUT_C, speed_to_speedvalue, SpeedNativeUnits
 from ev3dev2.sensor.lego import ColorSensor, UltrasonicSensor
@@ -16,6 +22,14 @@ handler.setLevel(logging.DEBUG)
 # logger.addHandler(file_handler)
 logger.addHandler(handler)
 
+in1 = LegoPort(INPUT_4)
+in1.mode = 'other-i2c'
+sleep(0.5)
+bus = SMBus(6)
+address = 0x54
+lamp = [174, 193, 22, 2, 1]
+bus.write_i2c_block_data(address, 0, lamp)
+
 
 class Robot:
     def __init__(self):
@@ -23,8 +37,8 @@ class Robot:
         self.sensor_middle = ColorSensor("in1")
         self.sensor_left = ColorSensor("in2")
         self.sensor_right = ColorSensor("in3")
-        self.sensor_ultrasonic = UltrasonicSensor("in4")
-        self.sensor_ultrasonic.mode = "US-DIST-CM"
+        # self.sensor_ultrasonic = UltrasonicSensor("in4")
+        # self.sensor_ultrasonic.mode = "US-DIST-CM"
         self.sensor_middle.mode = "COL-REFLECT"
         self.sensor_left.mode = "COL-REFLECT"
         self.sensor_right.mode = "COL-REFLECT"
@@ -87,6 +101,7 @@ class Robot:
             # logger.debug("sensor middle after while: {}".format(self.sensor_middle.value()))
             # logger.debug("sensor right after while: {}".format(self.sensor_right.value()))
 
+    """
     def cruiser(self, left_speed, right_speed):
 
         distance = self.sensor_ultrasonic.value() / 10
@@ -104,6 +119,28 @@ class Robot:
             right_speed = 0
 
         return left_speed, right_speed
+    """
+
+    def sign(self):
+
+        sigs = 1
+        data = [174, 193, 32, 2, sigs, 1]
+        bus.write_i2c_block_data(address, 0, data)
+        block = bus.read_i2c_block_data(address, 0, 20)
+        signColor = block[7] * 256 + block[6]
+        signWidth = block[13] * 256 + block[12]
+        signHeight = block[15] * 256 + block[14]
+
+        while signColor == 1 and signWidth > 50 and signHeight > 25:
+            # left_speed = 0
+            # right_speed = 0
+            self.tank_drive.stop()
+            self.run = False
+            Sound().play_song((('D4', 'e3'), ('D4', 'e3')))
+            time.sleep(1)
+            block = bus.read_i2c_block_data(address, 0, 20)
+            signColor = block[7] * 256 + block[6]
+        self.run = True
 
     def crossing(self):
 
@@ -152,5 +189,6 @@ class Robot:
             self.turn()
             self.crossing()
             self.tank_drive.on(left_speed, right_speed)
+            self.sign()
             self.stop()
             # time.sleep(0.5)
